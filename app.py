@@ -4,13 +4,14 @@ from pptx.util import Inches
 import io
 import base64
 import os
-import traceback  # Para imprimir errores detallados
+import traceback
+from PIL import Image
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ PowerPoint Generator API funcionando (Opción 2)."
+    return "✅ PowerPoint Generator API funcionando (Opción 2 con validación de logo)."
 
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
@@ -43,15 +44,21 @@ def generate_ppt():
 
         # 4️⃣ Insertar logo si existe
         if logo_data:
-            # Forzar tipo str en caso de que venga en bytes
+            # Forzar str y limpiar caracteres problemáticos
             if isinstance(logo_data, bytes):
-                logo_data = logo_data.decode('utf-8')
+                logo_data = logo_data.decode('utf-8', errors='ignore')
+            logo_data = logo_data.replace("\n", "").replace("\r", "")
+
             try:
                 image_bytes = base64.b64decode(logo_data)
-            except Exception as e:
-                return jsonify({"error": f"Error decodificando logo: {str(e)}"}), 400
+                image_stream = io.BytesIO(image_bytes)
 
-            image_stream = io.BytesIO(image_bytes)
+                # Validar que sea una imagen válida
+                Image.open(image_stream).verify()
+                image_stream.seek(0)
+            except Exception as e:
+                return jsonify({"error": f"Logo inválido: {str(e)}"}), 400
+
             inserted = False
             for slide in prs.slides:
                 for shape in slide.shapes:
@@ -63,7 +70,6 @@ def generate_ppt():
                         break
                 if inserted:
                     break
-            # Si no se encontró placeholder, insertar en la primera diapositiva
             if not inserted:
                 prs.slides[0].shapes.add_picture(image_stream, Inches(1), Inches(1.5), Inches(2), Inches(2))
 
