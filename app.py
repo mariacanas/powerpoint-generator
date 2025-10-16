@@ -17,7 +17,7 @@ CLIENT_SECRET = "c404782b-9250-4649-b1c2-7c6dac2ea6f0"
 SITE_DOMAIN = "swweb1998.sharepoint.com"
 SITE_PATH = "/sites/SegurosPlantilla"
 LIBRARY_NAME = "Documentos Generados"
-TEMPLATE_URL = "https://swweb1998.sharepoint.com/sites/SegurosPlantilla/Plantillas/Plantilla%20Automatización%20Presentaciones%20Empresas.pptx"
+TEMPLATE_URL = "https://swweb1998.sharepoint.com/:p:/s/SegurosPlantilla/EXE_JSM5cy5Btxlni1eo3UIBzBpsQUNLzpKuBsoHMSJsEQ?e=yFRbcs"
 
 # ===========================
 # FUNCIONES AUXILIARES
