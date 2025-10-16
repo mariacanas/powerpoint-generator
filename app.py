@@ -16,11 +16,12 @@ CLIENT_ID = "0371eba3-368d-4b9b-b74f-474fc67313da"
 CLIENT_SECRET = "c404782b-9250-4649-b1c2-7c6dac2ea6f0"
 SITE_DOMAIN = "swweb1998.sharepoint.com"
 SITE_PATH = "/sites/SegurosPlantilla"
-LIBRARY_NAME = "Documentos Generados"
-TEMPLATE_URL = "https://swweb1998.sharepoint.com/:p:/s/SegurosPlantilla/EXE_JSM5cy5Btxlni1eo3UIBzBpsQUNLzpKuBsoHMSJsEQ?e=yFRbcs"
+TEMPLATE_LIBRARY = "Plantillas"
+TEMPLATE_NAME = "Plantilla Automatización Presentaciones Empresas.pptx"
+OUTPUT_LIBRARY = "Documentos Generados"
 
 # ===========================
-# FUNCIONES AUXILIARES
+# FUNCIONES AUXILIARES GRAPH
 # ===========================
 def get_graph_token():
     url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
@@ -41,18 +42,25 @@ def get_site_id(token):
     resp.raise_for_status()
     return resp.json()["id"]
 
-def get_drive_id(token, site_id):
+def get_drive_id(token, site_id, library_name):
     url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
     headers = {"Authorization": f"Bearer {token}"}
     resp = requests.get(url, headers=headers)
     resp.raise_for_status()
     drives = resp.json().get("value", [])
     for d in drives:
-        if d["name"] == LIBRARY_NAME:
+        if d["name"] == library_name:
             return d["id"]
-    raise Exception(f"No se encontró la biblioteca '{LIBRARY_NAME}'")
+    raise Exception(f"No se encontró la biblioteca '{library_name}'")
 
-def upload_file(token, drive_id, file_name, file_bytes):
+def download_file_from_sharepoint(token, drive_id, file_name):
+    url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{file_name}:/content"
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = requests.get(url, headers=headers)
+    resp.raise_for_status()
+    return resp.content
+
+def upload_file_to_sharepoint(token, drive_id, file_name, file_bytes):
     url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{file_name}:/content"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -63,7 +71,7 @@ def upload_file(token, drive_id, file_name, file_bytes):
     return resp.json()["webUrl"]
 
 # ===========================
-# RUTAS FLASK
+# ENDPOINT PRINCIPAL
 # ===========================
 @app.route('/')
 def home():
@@ -72,19 +80,23 @@ def home():
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
     try:
-        # 1️⃣ Recibir JSON desde Power Automate
+        # 1️⃣ Recibir datos desde Power Automate
         data = request.get_json()
         nombre_empresa = data.get("Nombre_Empresa_Cliente", "")
         sector_empresa = data.get("Sector_Empresa_Cliente", "")
         logo_data = data.get("Logo_Empresa_Cliente", {}).get("data", "")
 
-        # 2️⃣ Descargar plantilla desde SharePoint
-        resp = requests.get(TEMPLATE_URL)
-        if resp.status_code != 200:
-            return jsonify({"error": f"No se pudo descargar la plantilla, status: {resp.status_code}"}), 400
-        prs = Presentation(io.BytesIO(resp.content))
+        # 2️⃣ Obtener token y site
+        token = get_graph_token()
+        site_id = get_site_id(token)
 
-        # 3️⃣ Reemplazar texto en todos los slides
+        # 3️⃣ Descargar plantilla desde SharePoint
+        template_drive_id = get_drive_id(token, site_id, TEMPLATE_LIBRARY)
+        plantilla_bytes = download_file_from_sharepoint(token, template_drive_id, TEMPLATE_NAME)
+
+        prs = Presentation(io.BytesIO(plantilla_bytes))
+
+        # 4️⃣ Reemplazar texto en la presentación
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
@@ -93,7 +105,7 @@ def generate_ppt():
                             run.text = run.text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
                             run.text = run.text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
 
-        # 4️⃣ Insertar logo si existe
+        # 5️⃣ Insertar logo
         if logo_data:
             image_bytes = base64.b64decode(logo_data)
             image_stream = io.BytesIO(image_bytes)
@@ -111,23 +123,22 @@ def generate_ppt():
             if not inserted:
                 prs.slides[0].shapes.add_picture(image_stream, Inches(1), Inches(1.5), Inches(2), Inches(2))
 
-        # 5️⃣ Guardar presentación en memoria
+        # 6️⃣ Guardar presentación modificada en memoria
         output = io.BytesIO()
         prs.save(output)
         output.seek(0)
 
-        # 6️⃣ Subir archivo a SharePoint con Graph API
-        token = get_graph_token()
-        site_id = get_site_id(token)
-        drive_id = get_drive_id(token, site_id)
+        # 7️⃣ Subir archivo generado a "Documentos Generados"
+        output_drive_id = get_drive_id(token, site_id, OUTPUT_LIBRARY)
         file_name = f"Presentacion_{nombre_empresa}.pptx"
-        file_url = upload_file(token, drive_id, file_name, output.getvalue())
+        file_url = upload_file_to_sharepoint(token, output_drive_id, file_name, output.getvalue())
 
-        # 7️⃣ Devolver URL del archivo
+        # 8️⃣ Devolver URL final del archivo
         return jsonify({"pptx_url": file_url}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
