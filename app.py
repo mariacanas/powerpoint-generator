@@ -4,8 +4,7 @@ from pptx.util import Inches
 import io
 import base64
 import os
-import requests
-import traceback  # 👈 Añadido para imprimir errores detallados
+import traceback  # Para imprimir errores detallados
 
 app = Flask(__name__)
 
@@ -18,14 +17,12 @@ def generate_ppt():
     try:
         # 1️⃣ Recibir JSON desde Power Automate
         data = request.get_json()
-        print("📥 JSON recibido:", data)  # 👈 Imprime el JSON completo
+        print("📥 JSON recibido:", data)
 
         nombre_empresa = data.get("Nombre_Empresa_Cliente", "")
         sector_empresa = data.get("Sector_Empresa_Cliente", "")
         logo_data = data.get("Logo_Empresa_Cliente", {}).get("data", "")
         plantilla_data = data.get("Plantilla_Base64", "")
-
-        print("📄 Plantilla_Base64 (primeros 100 caracteres):", plantilla_data[:100])  # 👈 Verifica contenido
 
         if not plantilla_data:
             print("❌ Plantilla_Base64 no recibida")
@@ -46,9 +43,15 @@ def generate_ppt():
 
         # 4️⃣ Insertar logo si existe
         if logo_data:
-            image_bytes = base64.b64decode(logo_data)
-            image_stream = io.BytesIO(image_bytes)
+            # Forzar tipo str en caso de que venga en bytes
+            if isinstance(logo_data, bytes):
+                logo_data = logo_data.decode('utf-8')
+            try:
+                image_bytes = base64.b64decode(logo_data)
+            except Exception as e:
+                return jsonify({"error": f"Error decodificando logo: {str(e)}"}), 400
 
+            image_stream = io.BytesIO(image_bytes)
             inserted = False
             for slide in prs.slides:
                 for shape in slide.shapes:
@@ -60,6 +63,7 @@ def generate_ppt():
                         break
                 if inserted:
                     break
+            # Si no se encontró placeholder, insertar en la primera diapositiva
             if not inserted:
                 prs.slides[0].shapes.add_picture(image_stream, Inches(1), Inches(1.5), Inches(2), Inches(2))
 
@@ -77,8 +81,8 @@ def generate_ppt():
         }), 200
 
     except Exception as e:
-        print("🔥 Error interno:", str(e))  # 👈 Imprime el mensaje del error
-        traceback.print_exc()              # 👈 Imprime el stack completo
+        print("🔥 Error interno:", str(e))
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
