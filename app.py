@@ -5,6 +5,7 @@ import io
 import base64
 import os
 import requests
+import traceback  # 👈 Añadido para imprimir errores detallados
 
 app = Flask(__name__)
 
@@ -17,12 +18,17 @@ def generate_ppt():
     try:
         # 1️⃣ Recibir JSON desde Power Automate
         data = request.get_json()
+        print("📥 JSON recibido:", data)  # 👈 Imprime el JSON completo
+
         nombre_empresa = data.get("Nombre_Empresa_Cliente", "")
         sector_empresa = data.get("Sector_Empresa_Cliente", "")
         logo_data = data.get("Logo_Empresa_Cliente", {}).get("data", "")
         plantilla_data = data.get("Plantilla_Base64", "")
 
+        print("📄 Plantilla_Base64 (primeros 100 caracteres):", plantilla_data[:100])  # 👈 Verifica contenido
+
         if not plantilla_data:
+            print("❌ Plantilla_Base64 no recibida")
             return jsonify({"error": "No se recibió la plantilla (Plantilla_Base64)."}), 400
 
         # 2️⃣ Decodificar plantilla y crear presentación
@@ -71,6 +77,8 @@ def generate_ppt():
         }), 200
 
     except Exception as e:
+        print("🔥 Error interno:", str(e))  # 👈 Imprime el mensaje del error
+        traceback.print_exc()              # 👈 Imprime el stack completo
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
