@@ -33,7 +33,7 @@ def generate_ppt():
         plantilla_bytes = base64.b64decode(plantilla_data)
         prs = Presentation(io.BytesIO(plantilla_bytes))
 
-        # 3️⃣ Reemplazar marcadores de texto y logo
+        # 3️⃣ Reemplazar marcadores de texto y logo sin duplicación
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
@@ -47,11 +47,14 @@ def generate_ppt():
                     full_text = full_text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
                     full_text = full_text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
 
-                    # 3. Eliminar todos los runs y escribir el texto nuevo en el primer run
-                    for paragraph in shape.text_frame.paragraphs:
-                        while paragraph.runs:
-                            paragraph._element.remove(paragraph.runs[0]._r)
-                        paragraph.add_run().text = full_text
+                    # 3. Eliminar todos los párrafos y crear uno nuevo
+                    text_frame = shape.text_frame
+                    while text_frame.paragraphs:
+                        text_frame._element.remove(text_frame.paragraphs[0]._p)
+
+                    new_paragraph = text_frame.add_paragraph()
+                    new_run = new_paragraph.add_run()
+                    new_run.text = full_text
 
                     # 4. Insertar logo si el marcador estaba presente
                     if "{{Logo_Empresa_Cliente}}" in full_text and logo_data:
