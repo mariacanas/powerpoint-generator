@@ -33,53 +33,42 @@ def generate_ppt():
         plantilla_bytes = base64.b64decode(plantilla_data)
         prs = Presentation(io.BytesIO(plantilla_bytes))
 
-        # 3️⃣ Reemplazar texto {{Nombre_Empresa_Cliente}} y {{Sector_Empresa_Cliente}}
+        # 3️⃣ Reemplazar marcadores de texto y logo
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
-                    for paragraph in shape.text_frame.paragraphs:
-                        for run in paragraph.runs:
-                            run.text = run.text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-                            run.text = run.text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+                    text = shape.text
 
-        # 4️⃣ Insertar logo si existe
-        if logo_data:
-            # Forzar str y limpiar caracteres problemáticos
-            if isinstance(logo_data, bytes):
-                logo_data = logo_data.decode('utf-8', errors='ignore')
-            logo_data = logo_data.replace("\n", "").replace("\r", "")
+                    # Reemplazar texto plano
+                    if "{{Nombre_Empresa_Cliente}}" in text:
+                        shape.text = text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+                    if "{{Sector_Empresa_Cliente}}" in text:
+                        shape.text = text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
 
-            try:
-                image_bytes = base64.b64decode(logo_data)
-                image_stream = io.BytesIO(image_bytes)
+                    # Reemplazar marcador de logo por imagen
+                    if "{{Logo_Empresa_Cliente}}" in text and logo_data:
+                        if isinstance(logo_data, bytes):
+                            logo_data = logo_data.decode('utf-8', errors='ignore')
+                        logo_data = logo_data.replace("\n", "").replace("\r", "")
+                        try:
+                            image_bytes = base64.b64decode(logo_data)
+                            image_stream = io.BytesIO(image_bytes)
+                            Image.open(image_stream).verify()
+                            image_stream.seek(0)
+                        except Exception as e:
+                            return jsonify({"error": f"Logo inválido: {str(e)}"}), 400
 
-                # Validar que sea una imagen válida
-                Image.open(image_stream).verify()
-                image_stream.seek(0)
-            except Exception as e:
-                return jsonify({"error": f"Logo inválido: {str(e)}"}), 400
-
-            inserted = False
-            for slide in prs.slides:
-                for shape in slide.shapes:
-                    if shape.has_text_frame and "{{Logo_Empresa_Cliente}}" in shape.text:
                         left, top, width, height = shape.left, shape.top, shape.width, shape.height
                         shape.text = ""
                         slide.shapes.add_picture(image_stream, left, top, width, height)
-                        inserted = True
-                        break
-                if inserted:
-                    break
-            if not inserted:
-                prs.slides[0].shapes.add_picture(image_stream, Inches(1), Inches(1.5), Inches(2), Inches(2))
 
-        # 5️⃣ Guardar presentación en memoria como Base64
+        # 4️⃣ Guardar presentación en memoria como Base64
         output = io.BytesIO()
         prs.save(output)
         output.seek(0)
         encoded_output = base64.b64encode(output.read()).decode("utf-8")
 
-        # 6️⃣ Devolver archivo PPTX codificado
+        # 5️⃣ Devolver archivo PPTX codificado
         return jsonify({
             "status": "ok",
             "nombre": f"Presentacion_{nombre_empresa}.pptx",
