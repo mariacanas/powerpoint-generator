@@ -37,30 +37,25 @@ def generate_ppt():
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
-                    text = shape.text
+                    for paragraph in shape.text_frame.paragraphs:
+                        for run in paragraph.runs:
+                            run.text = run.text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+                            run.text = run.text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+                            if "{{Logo_Empresa_Cliente}}" in run.text and logo_data:
+                                run.text = ""
+                                if isinstance(logo_data, bytes):
+                                    logo_data = logo_data.decode('utf-8', errors='ignore')
+                                logo_data = logo_data.replace("\n", "").replace("\r", "")
+                                try:
+                                    image_bytes = base64.b64decode(logo_data)
+                                    image_stream = io.BytesIO(image_bytes)
+                                    Image.open(image_stream).verify()
+                                    image_stream.seek(0)
+                                except Exception as e:
+                                    return jsonify({"error": f"Logo inválido: {str(e)}"}), 400
+                                left, top, width, height = shape.left, shape.top, shape.width, shape.height
+                                slide.shapes.add_picture(image_stream, left, top, width, height)
 
-                    # Reemplazar texto plano
-                    if "{{Nombre_Empresa_Cliente}}" in text:
-                        shape.text = text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-                    if "{{Sector_Empresa_Cliente}}" in text:
-                        shape.text = text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
-
-                    # Reemplazar marcador de logo por imagen
-                    if "{{Logo_Empresa_Cliente}}" in text and logo_data:
-                        if isinstance(logo_data, bytes):
-                            logo_data = logo_data.decode('utf-8', errors='ignore')
-                        logo_data = logo_data.replace("\n", "").replace("\r", "")
-                        try:
-                            image_bytes = base64.b64decode(logo_data)
-                            image_stream = io.BytesIO(image_bytes)
-                            Image.open(image_stream).verify()
-                            image_stream.seek(0)
-                        except Exception as e:
-                            return jsonify({"error": f"Logo inválido: {str(e)}"}), 400
-
-                        left, top, width, height = shape.left, shape.top, shape.width, shape.height
-                        shape.text = ""
-                        slide.shapes.add_picture(image_stream, left, top, width, height)
 
         # 4️⃣ Guardar presentación en memoria como Base64
         output = io.BytesIO()
@@ -83,3 +78,4 @@ def generate_ppt():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
+
