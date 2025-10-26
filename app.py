@@ -35,15 +35,34 @@ def generate_ppt():
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
-                    # Reemplazar texto sin eliminar formato
-                    for paragraph in shape.text_frame.paragraphs:
-                        for run in paragraph.runs:
-                            run.text = run.text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-                            run.text = run.text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+                    text_frame = shape.text_frame
 
-                    # Reemplazar marcador de logo si está en el texto
-                    if "{{Logo_Empresa_Cliente}}" in shape.text and logo_data:
-                        shape.text = shape.text.replace("{{Logo_Empresa_Cliente}}", "")
+                    # 3.1️⃣ Reconstruir todo el texto del shape
+                    full_text = ""
+                    for paragraph in text_frame.paragraphs:
+                        for run in paragraph.runs:
+                            full_text += run.text
+
+                    # 3.2️⃣ Reemplazar marcadores
+                    full_text = full_text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+                    full_text = full_text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+
+                    # 3.3️⃣ Insertar logo si el marcador está presente
+                    insertar_logo = False
+                    if "{{Logo_Empresa_Cliente}}" in full_text and logo_data:
+                        full_text = full_text.replace("{{Logo_Empresa_Cliente}}", "")
+                        insertar_logo = True
+
+                    # 3.4️⃣ Eliminar párrafos y crear uno nuevo con el texto reemplazado
+                    while text_frame.paragraphs:
+                        text_frame._element.remove(text_frame.paragraphs[0]._p)
+
+                    new_paragraph = text_frame.add_paragraph()
+                    new_run = new_paragraph.add_run()
+                    new_run.text = full_text
+
+                    # 3.5️⃣ Insertar imagen en la misma posición del shape si se detectó el marcador
+                    if insertar_logo:
                         if isinstance(logo_data, bytes):
                             logo_data = logo_data.decode('utf-8', errors='ignore')
                         logo_data = logo_data.replace("\n", "").replace("\r", "")
@@ -55,7 +74,6 @@ def generate_ppt():
                         except Exception as e:
                             return jsonify({"error": f"Logo inválido: {str(e)}"}), 400
 
-                        # Insertar imagen en la misma posición y tamaño del shape
                         left, top, width, height = shape.left, shape.top, shape.width, shape.height
                         slide.shapes.add_picture(image_stream, left, top, width, height)
 
@@ -80,3 +98,4 @@ def generate_ppt():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
+
