@@ -10,12 +10,11 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ PowerPoint Generator API funcionando (conserva formato original del texto)."
+    return "✅ PowerPoint Generator API funcionando (reemplazo robusto y formato conservado)."
 
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
     try:
-        # 1️⃣ Recibir JSON desde Power Automate
         data = request.get_json()
         print("📥 JSON recibido:", data)
 
@@ -27,11 +26,9 @@ def generate_ppt():
         if not plantilla_data:
             return jsonify({"error": "No se recibió la plantilla (Plantilla_Base64)."}), 400
 
-        # 2️⃣ Decodificar plantilla y crear presentación
         plantilla_bytes = base64.b64decode(plantilla_data)
         prs = Presentation(io.BytesIO(plantilla_bytes))
 
-        # 3️⃣ Reemplazar marcadores de texto y logo sin alterar formato
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
@@ -39,16 +36,32 @@ def generate_ppt():
                     insertar_logo = False
 
                     for paragraph in text_frame.paragraphs:
-                        for run in paragraph.runs:
-                            if "{{Nombre_Empresa_Cliente}}" in run.text:
-                                run.text = run.text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-                            if "{{Sector_Empresa_Cliente}}" in run.text:
-                                run.text = run.text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
-                            if "{{Logo_Empresa_Cliente}}" in run.text and logo_data:
-                                run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
-                                insertar_logo = True
+                        runs = paragraph.runs
+                        i = 0
+                        while i < len(runs):
+                            buffer = ""
+                            start = i
+                            while i < len(runs) and len(buffer) < 50:
+                                buffer += runs[i].text
+                                if "{{Nombre_Empresa_Cliente}}" in buffer:
+                                    buffer = buffer.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+                                    for j in range(start, i + 1):
+                                        runs[j].text = "" if j != i else buffer
+                                    break
+                                elif "{{Sector_Empresa_Cliente}}" in buffer:
+                                    buffer = buffer.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+                                    for j in range(start, i + 1):
+                                        runs[j].text = "" if j != i else buffer
+                                    break
+                                elif "{{Logo_Empresa_Cliente}}" in buffer and logo_data:
+                                    buffer = buffer.replace("{{Logo_Empresa_Cliente}}", "")
+                                    for j in range(start, i + 1):
+                                        runs[j].text = "" if j != i else buffer
+                                    insertar_logo = True
+                                    break
+                                i += 1
+                            i += 1
 
-                    # 4️⃣ Insertar imagen si se detectó el marcador de logo
                     if insertar_logo:
                         if isinstance(logo_data, bytes):
                             logo_data = logo_data.decode('utf-8', errors='ignore')
@@ -64,13 +77,11 @@ def generate_ppt():
                         left, top, width, height = shape.left, shape.top, shape.width, shape.height
                         slide.shapes.add_picture(image_stream, left, top, width, height)
 
-        # 5️⃣ Guardar presentación en memoria como Base64
         output = io.BytesIO()
         prs.save(output)
         output.seek(0)
         encoded_output = base64.b64encode(output.read()).decode("utf-8")
 
-        # 6️⃣ Devolver archivo PPTX codificado
         return jsonify({
             "status": "ok",
             "nombre": f"Presentacion_{nombre_empresa}.pptx",
