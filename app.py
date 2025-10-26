@@ -12,6 +12,29 @@ app = Flask(__name__)
 def home():
     return "✅ PowerPoint Generator API funcionando (reemplazo robusto y formato conservado)."
 
+def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
+    i = 0
+    while i < len(paragraph.runs):
+        buffer = ""
+        start = i
+        while i < len(paragraph.runs) and len(buffer) < 100:
+            buffer += paragraph.runs[i].text
+            if "{{Nombre_Empresa_Cliente}}" in buffer:
+                nuevo_texto = buffer.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+                for j in range(start, i + 1):
+                    paragraph.runs[j].text = "" if j != i else nuevo_texto
+                i = start
+                break
+            elif "{{Sector_Empresa_Cliente}}" in buffer:
+                nuevo_texto = buffer.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+                for j in range(start, i + 1):
+                    paragraph.runs[j].text = "" if j != i else nuevo_texto
+                i = start
+                break
+            else:
+                i += 1
+        i += 1
+
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
     try:
@@ -36,31 +59,11 @@ def generate_ppt():
                     insertar_logo = False
 
                     for paragraph in text_frame.paragraphs:
-                        runs = paragraph.runs
-                        i = 0
-                        while i < len(runs):
-                            buffer = ""
-                            start = i
-                            while i < len(runs) and len(buffer) < 50:
-                                buffer += runs[i].text
-                                if "{{Nombre_Empresa_Cliente}}" in buffer:
-                                    buffer = buffer.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-                                    for j in range(start, i + 1):
-                                        runs[j].text = "" if j != i else buffer
-                                    break
-                                elif "{{Sector_Empresa_Cliente}}" in buffer:
-                                    buffer = buffer.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
-                                    for j in range(start, i + 1):
-                                        runs[j].text = "" if j != i else buffer
-                                    break
-                                elif "{{Logo_Empresa_Cliente}}" in buffer and logo_data:
-                                    buffer = buffer.replace("{{Logo_Empresa_Cliente}}", "")
-                                    for j in range(start, i + 1):
-                                        runs[j].text = "" if j != i else buffer
-                                    insertar_logo = True
-                                    break
-                                i += 1
-                            i += 1
+                        reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
+                        for run in paragraph.runs:
+                            if "{{Logo_Empresa_Cliente}}" in run.text and logo_data:
+                                run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
+                                insertar_logo = True
 
                     if insertar_logo:
                         if isinstance(logo_data, bytes):
@@ -96,4 +99,3 @@ def generate_ppt():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-
