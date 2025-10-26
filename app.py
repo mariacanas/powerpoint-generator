@@ -10,30 +10,15 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ PowerPoint Generator API funcionando (reemplazo robusto y formato conservado)."
+    return "✅ PowerPoint Generator API funcionando (versión mejorada con reemplazo múltiple y logo en todas las diapositivas)."
 
-def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
-    i = 0
-    while i < len(paragraph.runs):
-        buffer = ""
-        start = i
-        while i < len(paragraph.runs) and len(buffer) < 100:
-            buffer += paragraph.runs[i].text
-            if "{{Nombre_Empresa_Cliente}}" in buffer:
-                nuevo_texto = buffer.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-                for j in range(start, i + 1):
-                    paragraph.runs[j].text = "" if j != i else nuevo_texto
-                i = start
-                break
-            elif "{{Sector_Empresa_Cliente}}" in buffer:
-                nuevo_texto = buffer.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
-                for j in range(start, i + 1):
-                    paragraph.runs[j].text = "" if j != i else nuevo_texto
-                i = start
-                break
-            else:
-                i += 1
-        i += 1
+
+# --- Función simple y robusta para reemplazar texto ---
+def reemplazar_marcadores_en_texto(text, nombre_empresa, sector_empresa):
+    text = text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+    text = text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+    return text
+
 
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
@@ -46,44 +31,63 @@ def generate_ppt():
         logo_data = data.get("Logo_Empresa_Cliente", {}).get("data", "")
         plantilla_data = data.get("Plantilla_Base64", "")
 
+        # Validaciones iniciales
         if not plantilla_data:
             return jsonify({"error": "No se recibió la plantilla (Plantilla_Base64)."}), 400
 
         plantilla_bytes = base64.b64decode(plantilla_data)
         prs = Presentation(io.BytesIO(plantilla_bytes))
 
+        # --- Procesar el logo si se envió ---
+        logo_stream = None
+        if logo_data:
+            try:
+                if isinstance(logo_data, bytes):
+                    logo_data = logo_data.decode('utf-8', errors='ignore')
+                logo_data = logo_data.replace("\n", "").replace("\r", "")
+                image_bytes = base64.b64decode(logo_data)
+                image_stream = io.BytesIO(image_bytes)
+
+                # Verificar que realmente sea una imagen válida
+                Image.open(image_stream).verify()
+                image_stream.seek(0)
+                logo_stream = image_stream
+                print("🖼️ Logo válido cargado correctamente.")
+            except Exception as e:
+                return jsonify({"error": f"Logo inválido o corrupto: {str(e)}"}), 400
+
+        # --- Recorrer todas las diapositivas y reemplazar marcadores ---
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
                     text_frame = shape.text_frame
-                    insertar_logo = False
 
                     for paragraph in text_frame.paragraphs:
-                        reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
-                        for run in paragraph.runs:
-                            if "{{Logo_Empresa_Cliente}}" in run.text and logo_data:
-                                run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
-                                insertar_logo = True
+                        # Reemplazar todos los marcadores de texto
+                        nuevo_texto = reemplazar_marcadores_en_texto(
+                            paragraph.text,
+                            nombre_empresa,
+                            sector_empresa
+                        )
 
-                    if insertar_logo:
-                        if isinstance(logo_data, bytes):
-                            logo_data = logo_data.decode('utf-8', errors='ignore')
-                        logo_data = logo_data.replace("\n", "").replace("\r", "")
-                        try:
-                            image_bytes = base64.b64decode(logo_data)
-                            image_stream = io.BytesIO(image_bytes)
-                            Image.open(image_stream).verify()
-                            image_stream.seek(0)
-                        except Exception as e:
-                            return jsonify({"error": f"Logo inválido: {str(e)}"}), 400
+                        # Si hay marcador de logo, insertarlo
+                        if "{{Logo_Empresa_Cliente}}" in nuevo_texto and logo_stream:
+                            paragraph.text = nuevo_texto.replace("{{Logo_Empresa_Cliente}}", "")
+                            left, top = shape.left, shape.top
+                            slide.shapes.add_picture(
+                                logo_stream, left, top, width=shape.width, height=shape.height
+                            )
+                            logo_stream.seek(0)  # permitir reutilizarlo
+                        else:
+                            paragraph.text = nuevo_texto
 
-                        left, top, width, height = shape.left, shape.top, shape.width, shape.height
-                        slide.shapes.add_picture(image_stream, left, top, width, height)
-
+        # --- Guardar la presentación resultante ---
         output = io.BytesIO()
         prs.save(output)
         output.seek(0)
         encoded_output = base64.b64encode(output.read()).decode("utf-8")
+
+        print("✅ Presentación generada correctamente.")
 
         return jsonify({
             "status": "ok",
@@ -95,6 +99,7 @@ def generate_ppt():
         print("🔥 Error interno:", str(e))
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
