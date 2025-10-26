@@ -10,36 +10,28 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ PowerPoint Generator API funcionando (reemplazo con conservación de formato)."
+    return "✅ PowerPoint Generator API funcionando (mantiene formato y coloca logo correctamente)."
 
 
-# --- Función que reemplaza texto dentro de runs manteniendo formato ---
 def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
-    """
-    Reemplaza los marcadores dentro de un párrafo sin perder formato.
-    """
+    """Reemplaza texto manteniendo formato."""
     buffer_text = ""
     run_map = []
 
-    # Construir texto completo y mapa de runs
     for i, run in enumerate(paragraph.runs):
         buffer_text += run.text
         run_map.append((i, run.text))
 
-    # Si no hay marcadores, salir
     if "{{" not in buffer_text:
         return
 
-    # Reemplazar en todo el texto plano
     nuevo_texto = buffer_text
     nuevo_texto = nuevo_texto.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
     nuevo_texto = nuevo_texto.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
 
-    # Limpiar todos los runs
     for run in paragraph.runs:
         run.text = ""
 
-    # Volver a escribir texto dentro de los mismos runs hasta agotar el texto nuevo
     pos = 0
     for i, run in enumerate(paragraph.runs):
         original = run_map[i][1]
@@ -49,7 +41,6 @@ def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
         run.text = nuevo_texto[pos:pos+length]
         pos += length
 
-    # Si queda texto sobrante (más largo que los runs originales)
     if pos < len(nuevo_texto):
         paragraph.add_run(nuevo_texto[pos:])
 
@@ -87,32 +78,43 @@ def generate_ppt():
             except Exception as e:
                 return jsonify({"error": f"Logo inválido o corrupto: {str(e)}"}), 400
 
-        # --- Procesar cada diapositiva ---
+        # --- Procesar diapositivas ---
         for slide in prs.slides:
             for shape in slide.shapes:
                 if shape.has_text_frame:
                     text_frame = shape.text_frame
-                    for paragraph in text_frame.paragraphs:
-                        # Reemplazar marcadores sin perder formato
-                        reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
 
-                        # Buscar marcador de logo
+                    for paragraph in text_frame.paragraphs:
+                        # --- Insertar logo si el marcador está ---
                         for run in paragraph.runs:
                             if "{{Logo_Empresa_Cliente}}" in run.text and logo_stream:
                                 run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
-                                left, top = shape.left, shape.top
-                                slide.shapes.add_picture(
-                                    logo_stream, left, top, width=shape.width, height=shape.height
-                                )
                                 logo_stream.seek(0)
 
-        # --- Guardar y devolver resultado ---
+                                # Dimensiones seguras
+                                width = shape.width if shape.width else 2000000
+                                height = shape.height if shape.height else 2000000
+                                left, top = shape.left, shape.top
+
+                                # Añadir imagen
+                                pic = slide.shapes.add_picture(
+                                    logo_stream, left, top, width=width, height=height
+                                )
+
+                                # Asegurar que el logo quede encima
+                                slide.shapes._spTree.remove(pic._element)
+                                slide.shapes._spTree.insert(len(slide.shapes._spTree), pic._element)
+
+                        # --- Reemplazar texto manteniendo formato ---
+                        reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
+
+        # --- Guardar resultado ---
         output = io.BytesIO()
         prs.save(output)
         output.seek(0)
         encoded_output = base64.b64encode(output.read()).decode("utf-8")
 
-        print("✅ Presentación generada correctamente (formato preservado).")
+        print("✅ Presentación generada correctamente (formato y logo OK).")
 
         return jsonify({
             "status": "ok",
