@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ PowerPoint Generator API funcionando (conserva formato y reemplaza logo)."
+    return "✅ PowerPoint Generator API funcionando (conserva formato base y reemplaza logo)."
 
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
@@ -36,19 +36,32 @@ def generate_ppt():
             for shape in slide.shapes:
                 if shape.has_text_frame:
                     text_frame = shape.text_frame
-                    insertar_logo = False
 
+                    # 3.1️⃣ Reconstruir todo el texto del shape
+                    full_text = ""
                     for paragraph in text_frame.paragraphs:
                         for run in paragraph.runs:
-                            if "{{Nombre_Empresa_Cliente}}" in run.text:
-                                run.text = run.text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-                            if "{{Sector_Empresa_Cliente}}" in run.text:
-                                run.text = run.text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
-                            if "{{Logo_Empresa_Cliente}}" in run.text and logo_data:
-                                run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
-                                insertar_logo = True
+                            full_text += run.text
 
-                    # 4️⃣ Insertar imagen si se detectó el marcador de logo
+                    # 3.2️⃣ Reemplazar marcadores
+                    full_text = full_text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+                    full_text = full_text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+
+                    # 3.3️⃣ Detectar si hay marcador de logo
+                    insertar_logo = False
+                    if "{{Logo_Empresa_Cliente}}" in full_text and logo_data:
+                        full_text = full_text.replace("{{Logo_Empresa_Cliente}}", "")
+                        insertar_logo = True
+
+                    # 3.4️⃣ Eliminar párrafos y crear uno nuevo con el texto reemplazado
+                    while text_frame.paragraphs:
+                        text_frame._element.remove(text_frame.paragraphs[0]._p)
+
+                    new_paragraph = text_frame.add_paragraph()
+                    new_run = new_paragraph.add_run()
+                    new_run.text = full_text
+
+                    # 3.5️⃣ Insertar imagen si se detectó el marcador de logo
                     if insertar_logo:
                         if isinstance(logo_data, bytes):
                             logo_data = logo_data.decode('utf-8', errors='ignore')
@@ -64,13 +77,13 @@ def generate_ppt():
                         left, top, width, height = shape.left, shape.top, shape.width, shape.height
                         slide.shapes.add_picture(image_stream, left, top, width, height)
 
-        # 5️⃣ Guardar presentación en memoria como Base64
+        # 4️⃣ Guardar presentación en memoria como Base64
         output = io.BytesIO()
         prs.save(output)
         output.seek(0)
         encoded_output = base64.b64encode(output.read()).decode("utf-8")
 
-        # 6️⃣ Devolver archivo PPTX codificado
+        # 5️⃣ Devolver archivo PPTX codificado
         return jsonify({
             "status": "ok",
             "nombre": f"Presentacion_{nombre_empresa}.pptx",
