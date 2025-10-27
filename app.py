@@ -14,20 +14,24 @@ app = Flask(__name__)
 def home():
     return "✅ PowerPoint Generator API (cuadros de texto + tablas + logo)."
 
-def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
+def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa, detect_logo=False):
     buffer_text = ""
     run_map = []
+    logo_detectado = False
 
     for i, run in enumerate(paragraph.runs):
         buffer_text += run.text
         run_map.append((i, run.text))
 
     if "{{" not in buffer_text:
-        return
+        return logo_detectado
 
-    nuevo_texto = buffer_text
-    nuevo_texto = nuevo_texto.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
-    nuevo_texto = nuevo_texto.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
+    if "{{Logo_Empresa_Cliente}}" in buffer_text:
+        logo_detectado = True
+        buffer_text = buffer_text.replace("{{Logo_Empresa_Cliente}}", "")
+
+    buffer_text = buffer_text.replace("{{Nombre_Empresa_Cliente}}", nombre_empresa)
+    buffer_text = buffer_text.replace("{{Sector_Empresa_Cliente}}", sector_empresa)
 
     for run in paragraph.runs:
         run.text = ""
@@ -36,13 +40,15 @@ def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
     for i, run in enumerate(paragraph.runs):
         original = run_map[i][1]
         length = len(original)
-        if pos >= len(nuevo_texto):
+        if pos >= len(buffer_text):
             break
-        run.text = nuevo_texto[pos:pos+length]
+        run.text = buffer_text[pos:pos+length]
         pos += length
 
-    if pos < len(nuevo_texto):
-        paragraph.add_run(nuevo_texto[pos:])
+    if pos < len(buffer_text):
+        paragraph.add_run(buffer_text[pos:])
+
+    return logo_detectado
 
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
@@ -92,16 +98,11 @@ def generate_ppt():
                     table = shape.table
                     for row in table.rows:
                         for cell in row.cells:
-                            # Reemplazar texto en celdas
+                            logo_detectado = False
                             for paragraph in cell.text_frame.paragraphs:
-                                reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
-
-                            # Insertar logo si el marcador está en la celda
-                            if "{{Logo_Empresa_Cliente}}" in cell.text_frame.text and logo_stream:
-                                for paragraph in cell.text_frame.paragraphs:
-                                    for run in paragraph.runs:
-                                        run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
-                                # Insertar logo en posición relativa dentro del shape de la tabla
+                                if reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa, detect_logo=True):
+                                    logo_detectado = True
+                            if logo_detectado and logo_stream:
                                 left = shape.left + Inches(0.2)
                                 top = shape.top + Inches(0.2)
                                 width, height = logo_size
@@ -126,7 +127,7 @@ def generate_ppt():
 
                 # Reemplazar texto en párrafos
                 for paragraph in text_frame.paragraphs:
-                    reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
+                    reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa, detect_logo=True)
 
             # Eliminar shapes que eran solo el marcador del logo
             for s in shapes_to_remove:
