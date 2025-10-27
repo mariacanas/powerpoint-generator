@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from pptx import Presentation
 from pptx.util import Inches
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 import io
 import base64
 import os
@@ -11,11 +12,9 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ PowerPoint Generator API (texto con formato + logo en shape independiente)."
-
+    return "✅ PowerPoint Generator API (cuadros de texto + tablas + logo)."
 
 def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
-    """Reemplaza marcadores dentro de runs sin perder formato."""
     buffer_text = ""
     run_map = []
 
@@ -45,12 +44,10 @@ def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
     if pos < len(nuevo_texto):
         paragraph.add_run(nuevo_texto[pos:])
 
-
 @app.route('/generate', methods=['POST'])
 def generate_ppt():
     try:
         data = request.get_json()
-        #print("📥 JSON recibido:", data)
 
         nombre_empresa = data.get("Nombre_Empresa_Cliente", "")
         sector_empresa = data.get("Sector_Empresa_Cliente", "")
@@ -63,7 +60,7 @@ def generate_ppt():
         plantilla_bytes = base64.b64decode(plantilla_data)
         prs = Presentation(io.BytesIO(plantilla_bytes))
 
-        # --- Preparar logo ---
+        # Preparar logo
         logo_stream = None
         logo_size = (Inches(1.5), Inches(1.5))
         if logo_data:
@@ -74,7 +71,6 @@ def generate_ppt():
                 image_bytes = base64.b64decode(logo_data)
                 image_stream = io.BytesIO(image_bytes)
 
-                # Calcular proporciones
                 img = Image.open(image_stream)
                 w, h = img.size
                 aspect = w / h
@@ -83,36 +79,52 @@ def generate_ppt():
 
                 image_stream.seek(0)
                 logo_stream = image_stream
-                print("🖼️ Logo válido cargado correctamente.")
             except Exception as e:
                 return jsonify({"error": f"Logo inválido o corrupto: {str(e)}"}), 400
 
-        # --- Recorrer todas las diapositivas ---
+        # Recorrer todas las diapositivas
         for slide in prs.slides:
-            shapes_to_remove = []  # almacenamos shapes que borraremos luego
+            shapes_to_remove = []
 
             for shape in slide.shapes:
+                # Procesar tablas
+                if shape.shape_type == MSO_SHAPE_TYPE.TABLE:
+                    table = shape.table
+                    for row in table.rows:
+                        for cell in row.cells:
+                            # Reemplazar texto en celdas
+                            for paragraph in cell.text_frame.paragraphs:
+                                reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
+
+                            # Insertar logo si el marcador está en la celda
+                            if "{{Logo_Empresa_Cliente}}" in cell.text_frame.text and logo_stream:
+                                for paragraph in cell.text_frame.paragraphs:
+                                    for run in paragraph.runs:
+                                        run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
+                                left = shape.left + cell.left
+                                top = shape.top + cell.top
+                                width = cell.width
+                                height = cell.height
+                                logo_stream.seek(0)
+                                slide.shapes.add_picture(logo_stream, left, top, width=width, height=height)
+                    continue
+
+                # Procesar cuadros de texto
                 if not shape.has_text_frame:
                     continue
 
                 text_frame = shape.text_frame
                 full_text = "\n".join([p.text for p in text_frame.paragraphs]).strip()
 
-                # --- Caso 1: el shape ES el marcador del logo ---
+                # Insertar logo si el shape contiene solo el marcador
                 if full_text == "{{Logo_Empresa_Cliente}}" and logo_stream:
                     left, top, width, height = shape.left, shape.top, shape.width, shape.height
-
-                    # Usamos tamaño del shape como tamaño del logo
                     logo_stream.seek(0)
-                    pic = slide.shapes.add_picture(
-                        logo_stream, left, top, width=width, height=height
-                    )
-
-                    # Borramos el cuadro de texto original
+                    slide.shapes.add_picture(logo_stream, left, top, width=width, height=height)
                     shapes_to_remove.append(shape)
                     continue
 
-                # --- Caso 2: shape normal con texto (nombre o sector) ---
+                # Reemplazar texto en párrafos
                 for paragraph in text_frame.paragraphs:
                     reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa)
 
@@ -121,13 +133,11 @@ def generate_ppt():
                 sp = s._element
                 sp.getparent().remove(sp)
 
-        # --- Guardar resultado ---
+        # Guardar resultado
         output = io.BytesIO()
         prs.save(output)
         output.seek(0)
         encoded_output = base64.b64encode(output.read()).decode("utf-8")
-
-        print("✅ Presentación generada correctamente (logo en su shape y texto preservado).")
 
         return jsonify({
             "status": "ok",
@@ -136,10 +146,8 @@ def generate_ppt():
         }), 200
 
     except Exception as e:
-        print("🔥 Error interno:", str(e))
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
