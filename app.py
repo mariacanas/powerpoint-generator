@@ -101,10 +101,10 @@ def generate_ppt():
                                 for paragraph in cell.text_frame.paragraphs:
                                     for run in paragraph.runs:
                                         run.text = run.text.replace("{{Logo_Empresa_Cliente}}", "")
-                                left = shape.left + cell.left
-                                top = shape.top + cell.top
-                                width = cell.width
-                                height = cell.height
+                                # Insertar logo en posición relativa dentro del shape de la tabla
+                                left = shape.left + Inches(0.2)
+                                top = shape.top + Inches(0.2)
+                                width, height = logo_size
                                 logo_stream.seek(0)
                                 slide.shapes.add_picture(logo_stream, left, top, width=width, height=height)
                     continue
@@ -152,4 +152,3 @@ def generate_ppt():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-
