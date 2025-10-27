@@ -50,7 +50,7 @@ def reemplazar_marcadores_en_runs(paragraph, nombre_empresa, sector_empresa):
 def generate_ppt():
     try:
         data = request.get_json()
-        print("📥 JSON recibido:", data)
+        #print("📥 JSON recibido:", data)
 
         nombre_empresa = data.get("Nombre_Empresa_Cliente", "")
         sector_empresa = data.get("Sector_Empresa_Cliente", "")
@@ -144,3 +144,4 @@ def generate_ppt():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
+
